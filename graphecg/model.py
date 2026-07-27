@@ -146,9 +146,12 @@ class GraphECG(nn.Module):
         hidden_dim: int = 192,
         num_layers: int = 3,
         tabular_dim: int = 7,
+        num_classes: int = 1,
         dropout: float = 0.5,
     ):
         super().__init__()
+        self.tabular_dim = tabular_dim
+        self.num_classes = num_classes
         self.pos_encoder = SphericalHarmonicEncoding(max_degree=4)
         self.node_proj = nn.Linear(self.pos_encoder.output_dim, node_dim)
         self.signal_encoder = SignalEncoder(hidden_dim=128, output_dim=edge_dim)
@@ -163,7 +166,9 @@ class GraphECG(nn.Module):
             nn.Mish(inplace=True),
         )
         self.dropout = nn.Dropout(dropout)
-        self.classifier = nn.Linear(hidden_dim + tabular_dim, 1)
+        # num_classes defaults to 1 (binary, e.g. the pretrained EchoNext checkpoint);
+        # set num_classes>1 for multiclass, tabular_dim=0 if you have no tabular features.
+        self.classifier = nn.Linear(hidden_dim + tabular_dim, num_classes)
 
     def forward(self, data: Data, tabular: Optional[torch.Tensor] = None) -> Dict[str, torch.Tensor]:
         batch = getattr(data, 'batch', None)
@@ -182,9 +187,11 @@ class GraphECG(nn.Module):
 
         graph_embed = self.dropout(self.graph_proj(graph_embed))
 
-        if tabular is not None:
+        if self.tabular_dim > 0:
+            if tabular is None:
+                tabular = graph_embed.new_zeros(graph_embed.shape[0], self.tabular_dim)
             fused = torch.cat([graph_embed, tabular], dim=-1)
         else:
-            fused = torch.cat([graph_embed, torch.zeros(graph_embed.shape[0], 7, device=graph_embed.device)], dim=-1)
+            fused = graph_embed
 
         return {'logits': self.classifier(fused), 'embedding': graph_embed}

@@ -33,11 +33,33 @@ graph = builder.build_from_array(ecg, lead_indices=[0, 1, 2], bidirectional=True
 # Or from named leads
 graph = builder.build_graph({'I': ecg[0], 'II': ecg[1]}, bidirectional=True)
 
+# Or from an arbitrary electrode pair (non-standard / wearable vectors)
+graph = builder.build_custom([('V2', 'V3', ecg[8] - ecg[7])], bidirectional=True)
+
 # Inference
 tabular = torch.randn(1, 7)  # Clinical features
 output = model(graph, tabular)
 prob = torch.sigmoid(output['logits'])
 ```
+
+## Training on your own data / task
+
+`GraphECG` is a standard `nn.Module` — bring your own training loop. It supports
+multiclass tasks and works with or without tabular features:
+
+```python
+# 3-class task, no tabular features:
+model = GraphECG(num_classes=3, tabular_dim=0)
+logits = model(graph)['logits']          # (B, 3); pass tabular=None or omit it
+
+# binary task with 7 tabular features (the default / pretrained EchoNext setup):
+model = GraphECG(num_classes=1, tabular_dim=7)
+```
+
+Build a `torch_geometric` batch from per-sample graphs with
+`torch_geometric.data.Batch.from_data_list([...])`, then optimize with your loss
+of choice. Reduced-lead inputs need no special handling: pass only the leads you
+have to `build_from_array`, and the model runs on the resulting subgraph.
 
 ## Graph Representation
 

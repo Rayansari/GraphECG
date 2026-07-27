@@ -148,3 +148,39 @@ class ECGGraphBuilder:
 
         signals = {LEAD_ORDER[i]: ecg[i] for i in lead_indices}
         return self.build_graph(signals, bidirectional=bidirectional)
+
+    def build_custom(self, edges, bidirectional: bool = True) -> Data:
+        """
+        Build a graph from arbitrary electrode-pair measurements.
+
+        This is what makes non-standard leads natural: any measured potential
+        difference between two known electrodes is just an edge. E.g. an ICM /
+        wearable vector V3-V2 is a single edge from V2 to V3.
+
+        Args:
+            edges: list of (src_electrode, tgt_electrode, signal) tuples, where
+                signal is the waveform of (phi_tgt - phi_src). Electrode names
+                must be keys of ELECTRODE_POSITIONS.
+            bidirectional: also add reverse edges carrying the negated signal.
+        """
+        edge_src, edge_tgt, edge_attr_list, edge_spherical = [], [], [], []
+        for src, tgt, signal in edges:
+            si, ti = self.electrode_to_idx[src], self.electrode_to_idx[tgt]
+            signal = np.asarray(signal, dtype=np.float32)
+            edge_src.append(si)
+            edge_tgt.append(ti)
+            edge_attr_list.append(signal)
+            edge_spherical.append(list(_direction_to_spherical(
+                ELECTRODE_POSITIONS[src], ELECTRODE_POSITIONS[tgt])))
+            if bidirectional:
+                edge_src.append(ti)
+                edge_tgt.append(si)
+                edge_attr_list.append(-signal)
+                edge_spherical.append(list(_direction_to_spherical(
+                    ELECTRODE_POSITIONS[tgt], ELECTRODE_POSITIONS[src])))
+        return Data(
+            x=self.positions.clone(),
+            edge_index=torch.tensor([edge_src, edge_tgt], dtype=torch.long),
+            edge_attr=torch.tensor(np.stack(edge_attr_list), dtype=torch.float32),
+            edge_spherical=torch.tensor(edge_spherical, dtype=torch.float32),
+        )
